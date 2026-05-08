@@ -1,0 +1,38 @@
+{
+  "name": "@rapido-fab/baas-env",
+  "version": "1.0.0",
+  "description": "FABaaS test-fixture provisioner — isolated OpenClaw environment helper for e2e tests.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RupertBarrow/baas-env.git"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "config"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0",
+    "vitest": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "baas-env": {
+    "defaultOpenclawVersion": "2026.5.7"
+  }
+}
