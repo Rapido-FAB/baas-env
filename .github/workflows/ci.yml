@@ -1,0 +1,74 @@
+# ci.yml — Build, test, and verify changesets on push/PR to main
+#
+# Triggers on push to main and on PRs targeting main.
+# Builds, runs tests, verifies a changeset is present (push only),
+# and uploads dist/ for the release workflow.
+#
+# Changeset enforcement (push to main only):
+#   Every push to main MUST include a changeset file (.changeset/*.md, not README.md).
+#   Commits with [skip changeset] or [skip ci] in the message are exempt.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN || github.token }}
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      # ── Changeset enforcement (push to main only) ─────────────────────
+      - name: Require changeset
+        if: github.event_name == 'push'
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          if echo "$COMMIT_MSG" | grep -qiE '\[skip changeset\]|\[skip ci\]'; then
+            echo "⏭️ Changeset check skipped (commit message opt-out)"
+            exit 0
+          fi
+          CHANGESETS=$(find .changeset -name '*.md' ! -name 'README.md' 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$CHANGESETS" -eq 0 ]; then
+            echo "❌ ERROR: No changeset found."
+            echo ""
+            echo "Every PR merged to main must include a changeset file."
+            echo "Run 'npx changeset' locally, commit the generated .changeset/*.md file,"
+            echo "and include it in your PR."
+            echo ""
+            echo "To skip this check, add [skip changeset] to the commit message."
+            exit 1
+          fi
+          echo "✅ Found $CHANGESETS changeset(s)"
+
+      - name: Upload build artifacts
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v7
+        with:
+          name: baas-env
+          path: dist/
+          retention-days: 30

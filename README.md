@@ -27,6 +27,21 @@ fixture.cleanup()
 
 ## Install
 
+From GitHub Packages (requires a `.npmrc` configured with a GitHub token):
+
+```bash
+npm install --save-dev @rapido-fab/baas-env
+```
+
+Or directly from the git repo:
+
 ```bash
 npm install --save-dev github:RupertBarrow/baas-env
 ```
+
+## Releases
+
+Releases are automated via [changesets](https://github.com/changesets/changesets)
+and GitHub Actions. Add a changeset with `npx changeset` in your PR; merging to
+`main` runs CI and triggers the release workflow, which publishes to GitHub
+Packages and creates a tagged GitHub Release.
