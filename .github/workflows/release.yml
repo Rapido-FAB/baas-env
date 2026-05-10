@@ -1,0 +1,211 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Release channel"
+        required: true
+        default: "production"
+        type: choice
+        options:
+          - production
+          - dev
+          - rc
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # Run on manual dispatch, or only on a successful CI run on main.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: write
+      packages: write
+      actions: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: main
+          token: ${{ secrets.GH_PAT || github.token }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: |
+          npm install
+          npm install --no-save @changesets/cli @changesets/changelog-git
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN || github.token }}
+
+      - name: Determine channel
+        id: channel
+        run: |
+          CHANNEL="${{ inputs.channel || 'production' }}"
+          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
+
+      - name: Check changesets
+        id: check
+        run: |
+          CHANGESET_FILES=$(find .changeset -name "*.md" ! -name "README.md" 2>/dev/null)
+          CHANGESETS=$(echo "$CHANGESET_FILES" | grep -c . || true)
+          if [ "$CHANGESETS" -eq 0 ]; then
+            echo "has_changesets=false" >> "$GITHUB_OUTPUT"
+            echo "No pending changesets — skipping release"
+          else
+            echo "has_changesets=true" >> "$GITHUB_OUTPUT"
+            echo "Found $CHANGESETS pending changeset(s)"
+          fi
+
+      - name: Version packages
+        id: version
+        if: steps.check.outputs.has_changesets == 'true'
+        run: |
+          CHANNEL="${{ steps.channel.outputs.channel }}"
+          VER_BEFORE=$(node -e "console.log(require('./package.json').version)")
+          if [ "$CHANNEL" = "production" ]; then
+            npx changeset version
+          else
+            npx changeset version --snapshot "$CHANNEL"
+          fi
+          VER_AFTER=$(node -e "console.log(require('./package.json').version)")
+          if [ "$VER_BEFORE" = "$VER_AFTER" ]; then
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "bumped=true" >> "$GITHUB_OUTPUT"
+            echo "ver_after=${VER_AFTER}" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || github.token }}
+
+      - name: Build
+        if: steps.version.outputs.bumped == 'true'
+        run: npm run build
+
+      - name: Publish to GitHub Packages
+        id: publish
+        if: steps.version.outputs.bumped == 'true'
+        continue-on-error: true
+        run: |
+          VER=$(node -e "console.log(require('./package.json').version)")
+          CHANNEL="${{ steps.channel.outputs.channel }}"
+          if [ "$CHANNEL" = "production" ]; then
+            npm publish
+          else
+            npm publish --tag "$CHANNEL"
+          fi
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN || github.token }}
+
+      - name: Commit version bump
+        if: steps.publish.outcome == 'success' && steps.channel.outputs.channel == 'production'
+        run: |
+          VER="${{ steps.publish.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json CHANGELOG.md .changeset/ dist/ || true
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: release v${VER} [skip ci]"
+          fi
+          if ! git rev-parse "v${VER}" >/dev/null 2>&1; then
+            git tag "v${VER}"
+          fi
+          git push origin main --tags || true
+
+      - name: Package dist artifact
+        if: steps.publish.outcome == 'success'
+        run: |
+          cd dist && zip -r ../baas-env.zip . && cd ..
+          echo "Created baas-env.zip ($(du -h baas-env.zip | cut -f1))"
+
+      - name: Create GitHub Release
+        id: gh_release
+        if: steps.publish.outcome == 'success'
+        continue-on-error: true
+        run: |
+          VER="${{ steps.publish.outputs.version }}"
+          CHANNEL="${{ steps.channel.outputs.channel }}"
+          PRERELEASE_FLAG=""
+          if [ "$CHANNEL" != "production" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+          if ! gh release view "v${VER}" &>/dev/null; then
+            gh release create "v${VER}" --title "v${VER}" --generate-notes $PRERELEASE_FLAG
+          fi
+          if [ -f baas-env.zip ]; then
+            gh release upload "v${VER}" baas-env.zip --clobber
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+
+      - name: Report
+        if: always()
+        env:
+          HAS_CHANGESETS: ${{ steps.check.outputs.has_changesets }}
+          BUMPED: ${{ steps.version.outputs.bumped }}
+          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+          RELEASE_OUTCOME: ${{ steps.gh_release.outcome }}
+          VER: ${{ steps.publish.outputs.version }}
+          CHANNEL: ${{ steps.channel.outputs.channel }}
+        run: |
+          VER_DISPLAY="${VER:-unknown}"
+
+          if [ "$HAS_CHANGESETS" != "true" ] || [ "$BUMPED" != "true" ]; then
+            echo "::notice title=Release::No pending changesets — nothing to publish"
+            {
+              echo "## Release outcome"
+              echo ""
+              echo "_No pending changesets — nothing was published._"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ "$PUBLISH_OUTCOME" = "success" ]; then
+            echo "::notice title=NPM Publish v${VER_DISPLAY}::Published @v${VER_DISPLAY} to GitHub Packages (channel: ${CHANNEL})"
+            PUB_ICON="pass"
+          else
+            echo "::error title=NPM Publish v${VER_DISPLAY}::npm publish failed (channel: ${CHANNEL}) — see Publish step logs"
+            PUB_ICON="fail"
+          fi
+
+          if [ "$RELEASE_OUTCOME" = "success" ]; then
+            echo "::notice title=GitHub Release v${VER_DISPLAY}::Release v${VER_DISPLAY} created"
+            REL_ICON="pass"
+          elif [ "$RELEASE_OUTCOME" = "skipped" ] || [ -z "$RELEASE_OUTCOME" ]; then
+            echo "::error title=GitHub Release v${VER_DISPLAY}::GitHub Release was skipped (upstream step failed)"
+            REL_ICON="skip"
+          else
+            echo "::error title=GitHub Release v${VER_DISPLAY}::gh release create failed — see Create GitHub Release step logs"
+            REL_ICON="fail"
+          fi
+
+          {
+            echo "## Release outcome"
+            echo ""
+            echo "| Step | Status | Version |"
+            echo "|------|--------|---------|"
+            echo "| NPM Publish    | ${PUB_ICON} \`${PUBLISH_OUTCOME:-skipped}\` | \`v${VER_DISPLAY}\` |"
+            echo "| GitHub Release | ${REL_ICON} \`${RELEASE_OUTCOME:-skipped}\` | \`v${VER_DISPLAY}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$PUBLISH_OUTCOME" != "success" ] || [ "$RELEASE_OUTCOME" != "success" ]; then
+            exit 1
+          fi

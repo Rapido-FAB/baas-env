@@ -17,14 +17,19 @@
     "config"
   ],
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
   },
   "scripts": {
     "build": "tsc",
     "prepare": "npm run build",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests",
+    "changeset": "changeset",
+    "version-packages": "changeset version"
   },
   "devDependencies": {
+    "@changesets/changelog-git": "^0.2.0",
+    "@changesets/cli": "^2.29.0",
     "@types/node": "^22.0.0",
     "typescript": "^5.8.0",
     "vitest": "^4.0.0"
