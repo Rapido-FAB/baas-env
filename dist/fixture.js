@@ -22,7 +22,26 @@ import { applyClaudeCliAgentDefaults } from './test-defaults.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(__dirname, '..');
 /** Default OpenClaw version — matches the tested stable release */
-export const DEFAULT_OPENCLAW_VERSION = '2026.5.7';
+export const DEFAULT_OPENCLAW_VERSION = '2026.5.28';
+/**
+ * The PATH the fixture spawns `openclaw` with. The live-integration tier targets
+ * **openclaw 2026.5.28** (the `/workboard` task-flag API + FA-CONCURRENCY land
+ * there), pinned under Homebrew `node@24`. This is the `export PATH=…` from the
+ * test-fixture .env template, applied programmatically so every consumer of
+ * `createFixture` resolves the same binary.
+ *
+ * Precedence: an explicit `BAAS_FIXTURE_PATH` override wins; else the pinned
+ * node@24 PATH when that `openclaw` is actually present (a dev machine); else the
+ * inherited `process.env.PATH` — so CI and other machines never break.
+ */
+export const OPENCLAW_2026_5_28_PATH = '/opt/homebrew/opt/node@24/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
+export function fixturePath() {
+    if (process.env.BAAS_FIXTURE_PATH)
+        return process.env.BAAS_FIXTURE_PATH;
+    if (existsSync('/opt/homebrew/opt/node@24/bin/openclaw'))
+        return OPENCLAW_2026_5_28_PATH;
+    return process.env.PATH ?? '';
+}
 export function createFixture(pluginRoot, opts = {}) {
     const fixtureRoot = opts.fixtureRoot ?? '/tmp/baas';
     const openclawVersion = opts.openclawVersion ?? DEFAULT_OPENCLAW_VERSION;
@@ -70,6 +89,7 @@ export function createFixture(pluginRoot, opts = {}) {
             : openclawNpmModules;
         const fixtureEnv = {
             ...stripVitestEnv(),
+            PATH: fixturePath(),
             OPENCLAW_STATE_DIR: stateDir,
             OPENCLAW_CONFIG_PATH: configPath,
             NODE_PATH: nodePath,
