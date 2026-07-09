@@ -38,6 +38,6 @@
     "node": ">=20"
   },
   "baas-env": {
-    "defaultOpenclawVersion": "2026.5.7"
+    "defaultOpenclawVersion": "2026.6.11"
   }
 }
