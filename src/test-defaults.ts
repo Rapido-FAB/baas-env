@@ -11,11 +11,10 @@ export interface AgentDefaults {
 }
 
 export const CLAUDE_CLI_AGENT_DEFAULTS: AgentDefaults = {
-  primary: 'claude-cli/claude-sonnet-4-6',
+  primary: 'claude-cli/claude-sonnet-5',
   fallbacks: [
     'claude-cli/claude-haiku-4-5',
-    'claude-cli/claude-opus-4-6',
-    'claude-cli/claude-opus-4-7',
+    'claude-cli/claude-opus-4-8',
   ],
 }
 
