@@ -1,6 +1,6 @@
 {
   "name": "@rapido-fab/baas-env",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "FABaaS test-fixture provisioner — isolated OpenClaw environment helper for e2e tests.",
   "repository": {
     "type": "git",
