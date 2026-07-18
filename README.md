@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> **ARCHIVED (2026-07-18).** Development moved to the [Rapido-FAB/baas monorepo](https://github.com/Rapido-FAB/baas) — this package now lives at [`packages/env`](https://github.com/Rapido-FAB/baas/tree/main/packages/env) with full history preserved. This repo is a read-only history mirror.
+
 # @rapido-fab/baas-env
 
 FABaaS e2e test-fixture provisioner for OpenClaw plugins.
